@@ -2,7 +2,7 @@ import sys
 import sqlite3
 import csv
 from PyQt5 import uic
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtWidgets import QApplication, QMainWindow, QTableWidgetItem
 
 
 class MainWindow(QMainWindow):
@@ -46,35 +46,56 @@ class MainWindow(QMainWindow):
         an = analysis()
         if type(an.main_analysis(names)) == int:
             self.progressBar.setValue(an.main_analysis(names))
-            self.Time.display(an.time(names))
+            self.Time.display(an.time(names)[0])
+            if an.time(names)[1] == 1:
+                self.time_label.setText('В выборе есть персонажи\n'
+                                        'co слишком разным временем\n'
+                                        'набора пика силы')
+                self.time_label.show()
         else:
             self.error_label.setText(an.main_analysis(names))
             self.error_label.show()
+        self.sf = SecondForm
+        self.sf.insertion(self, names, an.main_analysis(names))
 
     def open_form(self):
-        self.form = SecondForm(self)
+        self.form = SecondForm()
         self.form.show()
 
 
 class SecondForm(QMainWindow):
-    def __init__(self, *args):
+    def __init__(self):
         super().__init__()
         uic.loadUi('second_interface.ui', self)
+        self.tableWidget.setColumnCount(6)
+        self.tableWidget.setRowCount(5)
+        lst = ['pos1', 'pos2', 'pos3', 'pos4', 'pos5', 'res']
+        self.con = sqlite3.connect('dota2_heroes.sqlite')
+        self.cur = self.con.cursor()
+        self.tableWidget.setHorizontalHeaderLabels(lst)
+        for row in range(5):
+            for col in range(6):
+                item = str(list(self.cur.execute("""SELECT * FROM recentrequests"""))[row][col])
+                self.tableWidget.setItem(row, col, QTableWidgetItem(item))
+
+    def insertion(self, names, res):
+        for i in [5, 4, 3, 2, 1]:
+            if i > 1:
+                ite = list(list(self.cur.execute("""SELECT * FROM recentrequests
+                                                    WHERE id = ?""", (i - 1,)))[0])
+            self.cur.execute("""UPDATE recentrequests
+                                SET (pos1, pos2, pos3, pos4, pos5, res) = (?, ?, ?, ?, ?, ?)
+                                WHERE id = ?""", (ite[0], ite[1], ite[2], ite[3], ite[4], ite[5], i))
+        self.cur.execute("""UPDATE recentrequests
+                            SET (pos1, pos2, pos3, pos4, pos5, res) = (?, ?, ?, ?, ?, ?)
+                            WHERE id = 1""", (names[0], names[1], names[2], names[3], names[4], res))
+        self.con.commit()
 
 
 # Класс в котором производятся расчеты для анализа
 class analysis(MainWindow):
     def __init__(self):
         super(analysis, self).__init__()
-
-    def name_check(self, names):
-        for i in names:
-            if i not in self.truenames1:
-                return 'Ошибка: неверное имя персонажа - {}'.format(i)
-            elif names.count(i) > 1:
-                return 'Ошибка: в команде не может быть двух одинаковых персонажей({})'.format(i)
-            else:
-                return False
 
     def main_analysis(self, names):
         flag = 0
@@ -93,8 +114,6 @@ class analysis(MainWindow):
             cnt = 1
             res = 0
             for n in names:
-                print(list(self.cur.execute("""SELECT farm FROM heroes
-                                                    WHERE name = ?""", (n,)))[0][0])
                 inp_parameters[0] += list(self.cur.execute("""SELECT farm FROM heroes
                                                     WHERE name = ?""", (n,)))[0][0]
                 inp_parameters[1] += list(self.cur.execute("""SELECT meta FROM heroes
@@ -123,7 +142,7 @@ class analysis(MainWindow):
             times.append(list(self.cur.execute("""SELECT time FROM heroes
                                                     WHERE name = ?""", (_,)))[0][0])
         n = 0
-        if max(times) - min(times) > 10:
+        if max(times) - min(times) >= 10:
             n = 1
         return [int(sum(times) / len(times)), n]
 
